@@ -97,6 +97,7 @@ final class AppState {
     private func presentSession(row: PeerRow, credentials: SessionCredentials) -> UUID? {
         guard let host = row.host, let port = row.port, let desktopProtocol = row.desktopProtocol else { return nil }
         let id = UUID()
+        try? profileStore.markLastUsed(peerID: row.id)
         sessions[id] = OpenSession(
             id: id,
             peerID: row.id,

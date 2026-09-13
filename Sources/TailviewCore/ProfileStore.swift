@@ -13,7 +13,7 @@ public final class ProfileStore {
         if FileManager.default.fileExists(atPath: fileURL.path) {
             let data = try Data(contentsOf: fileURL)
             let envelope = try JSONDecoder().decode(Envelope.self, from: data)
-            profiles = Dictionary(uniqueKeysWithValues: envelope.profiles.map { ($0.peerID, $0) })
+            profiles = Dictionary(envelope.profiles.map { ($0.peerID, $0) }, uniquingKeysWith: { _, last in last })
         } else {
             profiles = [:]
         }
@@ -35,6 +35,12 @@ public final class ProfileStore {
     public func setOverride(peerID: String, override: ProtocolOverride) throws {
         var profile = profiles[peerID] ?? PeerProfile(peerID: peerID, protocolOverride: nil, lastUsed: nil)
         profile.protocolOverride = override
+        try upsert(profile)
+    }
+
+    public func markLastUsed(peerID: String, at date: Date = Date()) throws {
+        var profile = profiles[peerID] ?? PeerProfile(peerID: peerID, protocolOverride: nil, lastUsed: nil)
+        profile.lastUsed = date
         try upsert(profile)
     }
 
