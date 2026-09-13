@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import Observation
 import TailviewCore
+import TailviewVNC
 
 @MainActor
 @Observable
@@ -10,6 +11,7 @@ final class AppState {
     var credentialPrompt: PeerRow?
     var sessionRow: PeerRow?
     private(set) var sessionCredentials: SessionCredentials?
+    private(set) var sessionController: SessionController?
 
     private let client: TailscaleClient
     private let credentialStore: any CredentialStore
@@ -48,8 +50,7 @@ final class AppState {
     func connect(_ row: PeerRow) -> Bool {
         guard let desktopProtocol = row.desktopProtocol else { return false }
         if let credentials = try? credentialStore.load(peerID: row.id, desktopProtocol: desktopProtocol) {
-            sessionCredentials = credentials
-            sessionRow = row
+            presentSession(row: row, credentials: credentials)
             return true
         }
         credentialPrompt = row
@@ -61,9 +62,20 @@ final class AppState {
         if saveInKeychain {
             try? credentialStore.save(peerID: row.id, desktopProtocol: desktopProtocol, credentials: credentials)
         }
+        presentSession(row: row, credentials: credentials)
+        credentialPrompt = nil
+    }
+
+    private func presentSession(row: PeerRow, credentials: SessionCredentials) {
+        guard let host = row.host, let port = row.port, let desktopProtocol = row.desktopProtocol else { return }
         sessionCredentials = credentials
         sessionRow = row
-        credentialPrompt = nil
+        sessionController = SessionController(
+            endpoint: Endpoint(host: host, port: port),
+            desktopProtocol: desktopProtocol,
+            credentials: credentials,
+            factory: DefaultSessionFactory()
+        )
     }
 
     func cancelCredentials() {

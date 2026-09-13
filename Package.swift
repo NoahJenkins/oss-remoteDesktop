@@ -8,9 +8,19 @@ let package = Package(
         .library(name: "TailviewCore", targets: ["TailviewCore"]),
         .executable(name: "Tailview", targets: ["Tailview"]),
     ],
+    dependencies: [
+        .package(url: "https://github.com/royalapplications/royalvnc.git", branch: "main"),
+    ],
     targets: [
         .target(name: "TailviewCore"),
-        .executableTarget(name: "Tailview", dependencies: ["TailviewCore"]),
+        .target(
+            name: "TailviewVNC",
+            dependencies: [
+                "TailviewCore",
+                .product(name: "RoyalVNCKit", package: "royalvnc"),
+            ]
+        ),
+        .executableTarget(name: "Tailview", dependencies: ["TailviewCore", "TailviewVNC"]),
         .testTarget(
             name: "TailviewCoreTests",
             dependencies: ["TailviewCore"],

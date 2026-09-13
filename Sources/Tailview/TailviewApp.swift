@@ -12,8 +12,8 @@ struct TailviewApp: App {
         }
         WindowGroup(id: "session") {
             Group {
-                if let row = appState.sessionRow {
-                    Text("Connecting to \(row.displayName)")
+                if let controller = appState.sessionController, let row = appState.sessionRow {
+                    SessionView(controller: controller, displayName: row.displayName)
                 }
             }
             .frame(minWidth: 480, minHeight: 320)
