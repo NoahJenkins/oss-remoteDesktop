@@ -20,7 +20,30 @@ let package = Package(
                 .product(name: "RoyalVNCKit", package: "royalvnc"),
             ]
         ),
-        .executableTarget(name: "Tailview", dependencies: ["TailviewCore", "TailviewVNC"]),
+        .target(
+            name: "tailview_rdpFFI",
+            path: "Sources/TailviewRDP/Generated",
+            sources: ["empty.c"],
+            publicHeadersPath: ".",
+            linkerSettings: [
+                .unsafeFlags([
+                    "-L\(Context.packageDirectory)/core/rdp/target/debug",
+                    "-Xlinker", "-weak-ltailview_rdp",
+                    "-Xlinker", "-rpath",
+                    "-Xlinker", "\(Context.packageDirectory)/core/rdp/target/debug",
+                ])
+            ]
+        ),
+        .target(
+            name: "TailviewRDP",
+            dependencies: ["TailviewCore", "tailview_rdpFFI"],
+            exclude: [
+                "Generated/empty.c",
+                "Generated/module.modulemap",
+                "Generated/tailview_rdpFFI.h",
+            ]
+        ),
+        .executableTarget(name: "Tailview", dependencies: ["TailviewCore", "TailviewVNC", "TailviewRDP"]),
         .testTarget(
             name: "TailviewCoreTests",
             dependencies: ["TailviewCore"],

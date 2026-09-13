@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import Observation
 import TailviewCore
+import TailviewRDP
 import TailviewVNC
 
 struct OpenSession {
@@ -87,7 +88,10 @@ final class AppState {
                 endpoint: Endpoint(host: host, port: port),
                 desktopProtocol: desktopProtocol,
                 credentials: credentials,
-                factory: DefaultSessionFactory()
+                factory: CompositeSessionFactory(
+                    vnc: VNCSessionFactory.makeSession,
+                    rdp: RDPSessionFactory.makeSession
+                )
             )
         )
         return id
