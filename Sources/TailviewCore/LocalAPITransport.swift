@@ -29,11 +29,11 @@ public struct UnixLocalAPITransport: LocalAPITransport {
 
     private static func fetchStatus(socketPath: String) async throws -> Data {
         let connection = NWConnection(to: .unix(path: socketPath), using: .tcp)
+        defer { connection.cancel() }
         try await start(connection)
         let request = Data("GET /localapi/v0/status HTTP/1.0\r\nHost: local-tailscaled.sock\r\n\r\n".utf8)
         try await send(request, on: connection)
         let response = try await receiveAll(from: connection)
-        connection.cancel()
         return httpBody(from: response)
     }
 
