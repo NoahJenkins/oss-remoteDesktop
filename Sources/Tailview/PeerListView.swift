@@ -54,15 +54,17 @@ struct PeerListView: View {
                 Text(protocolLabel(row.desktopProtocol))
             }
             TableColumn("") { row in
-                if row.connectEnabled {
+                HStack {
                     Button("Connect") {
                         if appState.connect(row) {
                             openWindow(id: "session")
                         }
                     }
-                } else if let reason = row.disabledReason {
-                    Text(reason)
-                        .foregroundStyle(.secondary)
+                    .disabled(!row.connectEnabled)
+                    if let reason = row.disabledReason {
+                        Text(reason)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
         }
