@@ -11,7 +11,6 @@ public enum SessionEvent: Equatable, Sendable {
 
 public final class SessionController: Sendable {
     private let host: String
-    private let credentials: SessionCredentials
     private let factory: RemoteSessionFactory
     private let state: State
 
@@ -26,7 +25,6 @@ public final class SessionController: Sendable {
         factory: RemoteSessionFactory
     ) {
         host = endpoint.host
-        self.credentials = credentials
         self.factory = factory
         let eventStream = AsyncStream.makeStream(of: SessionEvent.self)
         let frameStream = AsyncStream.makeStream(of: FramebufferFrame.self)
@@ -37,6 +35,7 @@ public final class SessionController: Sendable {
         state = State(
             desktopProtocol: desktopProtocol,
             port: endpoint.port,
+            credentials: credentials,
             eventContinuation: eventStream.continuation,
             frameContinuation: frameStream.continuation,
             clipboardContinuation: clipboardStream.continuation
@@ -47,6 +46,7 @@ public final class SessionController: Sendable {
         await tearDownSession(emitDisconnected: false)
         yield(.connecting)
         let (desktopProtocol, port) = state.protocolAndPort()
+        let credentials = state.currentCredentials()
         let session: any RemoteSession
         do {
             session = try factory.makeSession(
@@ -82,6 +82,11 @@ public final class SessionController: Sendable {
 
     public func declineFailover() async {
         await tearDownSession(emitDisconnected: true)
+    }
+
+    public func retryWithCredentials(_ credentials: SessionCredentials) async {
+        state.setCredentials(credentials)
+        await start()
     }
 
     public func reconnect() async {
@@ -154,6 +159,7 @@ public final class SessionController: Sendable {
         private let lock = NSLock()
         private var desktopProtocol: DesktopProtocol
         private var port: UInt16
+        private var credentials: SessionCredentials
         private var session: (any RemoteSession)?
         private var connected = false
         private var sessionID = 0
@@ -165,12 +171,14 @@ public final class SessionController: Sendable {
         init(
             desktopProtocol: DesktopProtocol,
             port: UInt16,
+            credentials: SessionCredentials,
             eventContinuation: AsyncStream<SessionEvent>.Continuation,
             frameContinuation: AsyncStream<FramebufferFrame>.Continuation,
             clipboardContinuation: AsyncStream<String>.Continuation
         ) {
             self.desktopProtocol = desktopProtocol
             self.port = port
+            self.credentials = credentials
             self.eventContinuation = eventContinuation
             self.frameContinuation = frameContinuation
             self.clipboardContinuation = clipboardContinuation
@@ -188,6 +196,18 @@ public final class SessionController: Sendable {
             let (nextProtocol, nextPort) = ProtocolHeuristic.failover(from: desktopProtocol)
             desktopProtocol = nextProtocol
             port = nextPort
+        }
+
+        func currentCredentials() -> SessionCredentials {
+            lock.lock()
+            defer { lock.unlock() }
+            return credentials
+        }
+
+        func setCredentials(_ credentials: SessionCredentials) {
+            lock.lock()
+            defer { lock.unlock() }
+            self.credentials = credentials
         }
 
         func currentSession() -> (any RemoteSession)? {

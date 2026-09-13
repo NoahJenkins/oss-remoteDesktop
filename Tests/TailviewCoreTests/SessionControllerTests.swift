@@ -107,6 +107,21 @@ struct SessionControllerTests {
         let events = await collect(controller.events, atLeast: 3)
         #expect(events.contains(.disconnected))
     }
+
+    @Test func declineFailoverDisconnectsWithoutSecondSession() async {
+        let factory = FakeSessionFactory(result: .failure(.connectionRefused))
+        let controller = SessionController(
+            endpoint: Endpoint(host: "100.64.0.2", port: 5900),
+            desktopProtocol: .vnc,
+            credentials: SessionCredentials(username: "", password: "x"),
+            factory: factory
+        )
+        await controller.start()
+        await controller.declineFailover()
+        #expect(factory.createdProtocols == [.vnc])
+        let events = await collect(controller.events, atLeast: 3)
+        #expect(events.contains(.disconnected))
+    }
 }
 
 func collect<T: Sendable>(_ stream: AsyncStream<T>, atLeast _: Int) async -> [T] {

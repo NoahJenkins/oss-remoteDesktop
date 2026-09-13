@@ -19,7 +19,7 @@ struct PeerListView: View {
         .frame(minWidth: 640, minHeight: 360)
         .onAppear { appState.start() }
         .sheet(item: Bindable(appState).credentialPrompt) { row in
-            CredentialSheet(row: row) { credentials, saveInKeychain in
+            CredentialSheet(displayName: row.displayName, desktopProtocol: row.desktopProtocol) { credentials, saveInKeychain in
                 if let id = appState.submitCredentials(credentials, saveInKeychain: saveInKeychain) {
                     openWindow(id: "session", value: id)
                 }

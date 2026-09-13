@@ -2,7 +2,8 @@ import SwiftUI
 import TailviewCore
 
 struct CredentialSheet: View {
-    var row: PeerRow
+    var displayName: String
+    var desktopProtocol: DesktopProtocol?
     var onConnect: (SessionCredentials, Bool) -> Void
     var onCancel: () -> Void
 
@@ -12,9 +13,9 @@ struct CredentialSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Connect to \(row.displayName)")
+            Text("Connect to \(displayName)")
                 .font(.headline)
-            if row.desktopProtocol != .vnc {
+            if desktopProtocol != .vnc {
                 TextField("Username", text: $username)
                     .textContentType(.username)
             }

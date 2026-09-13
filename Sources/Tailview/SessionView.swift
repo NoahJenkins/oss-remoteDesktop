@@ -5,13 +5,38 @@ import TailviewCore
 struct SessionView: View {
     let sessionID: UUID
     let controller: SessionController
+    let peerID: String
     let displayName: String
     @Environment(AppState.self) private var appState
+    @Environment(\.dismiss) private var dismiss
 
     @State private var sessionEvent: SessionEvent = .connecting
     @State private var frame: FramebufferFrame?
+    @State private var desktopProtocol: DesktopProtocol
+    @State private var sessionPort: UInt16
     @State private var showFailover = false
+    @State private var showRDPUnavailable = false
+    @State private var showCredentials = false
     @State private var failoverTo: DesktopProtocol = .rdp
+    @State private var failoverToPort: UInt16 = 3389
+    @State private var pendingOverride = false
+    @State private var clipboardLoop = ClipboardLoop()
+
+    init(
+        sessionID: UUID,
+        controller: SessionController,
+        peerID: String,
+        displayName: String,
+        desktopProtocol: DesktopProtocol,
+        port: UInt16
+    ) {
+        self.sessionID = sessionID
+        self.controller = controller
+        self.peerID = peerID
+        self.displayName = displayName
+        _desktopProtocol = State(initialValue: desktopProtocol)
+        _sessionPort = State(initialValue: port)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -25,12 +50,6 @@ struct SessionView: View {
                 .padding(8)
                 .frame(maxWidth: .infinity)
                 .background(Color.yellow.opacity(0.35))
-            }
-            if case .failed(let failure) = sessionEvent {
-                Text(failureMessage(failure))
-                    .padding(8)
-                    .frame(maxWidth: .infinity)
-                    .background(Color.red.opacity(0.2))
             }
             ZStack {
                 SessionFramebufferView(
@@ -64,9 +83,18 @@ struct SessionView: View {
                         await MainActor.run { frame = next }
                     }
                 }
+                group.addTask {
+                    for await text in controller.remoteClipboard {
+                        await MainActor.run { applyRemoteClipboard(text) }
+                    }
+                }
                 await controller.start()
                 await group.waitForAll()
             }
+        }
+        .task(id: desktopProtocol) {
+            guard desktopProtocol == .rdp else { return }
+            await pollLocalPasteboard()
         }
         .onDisappear {
             Task {
@@ -75,47 +103,101 @@ struct SessionView: View {
             }
         }
         .confirmationDialog(failoverPrompt, isPresented: $showFailover) {
-            Button(failoverPrompt) {
+            Button("Try \(protocolName(failoverTo))") {
+                desktopProtocol = failoverTo
+                sessionPort = failoverToPort
+                pendingOverride = true
                 Task { await controller.acceptFailover() }
             }
             Button("Cancel", role: .cancel) {
                 Task { await controller.declineFailover() }
             }
         }
-    }
-
-    private var failoverPrompt: String {
-        switch failoverTo {
-        case .rdp:
-            return "Try RDP instead?"
-        case .vnc, .screenSharing:
-            return "Try VNC instead?"
+        .alert("RDP is unavailable.", isPresented: $showRDPUnavailable) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("VNC still works from the list.")
+        }
+        .sheet(isPresented: $showCredentials) {
+            CredentialSheet(displayName: displayName, desktopProtocol: desktopProtocol) { credentials, saveInKeychain in
+                showCredentials = false
+                if saveInKeychain {
+                    appState.saveSessionCredentials(
+                        peerID: peerID,
+                        desktopProtocol: desktopProtocol,
+                        credentials: credentials
+                    )
+                }
+                Task { await controller.retryWithCredentials(credentials) }
+            } onCancel: {
+                showCredentials = false
+            }
         }
     }
 
-    private func failureMessage(_ failure: SessionFailure) -> String {
-        switch failure {
-        case .authenticationFailed:
-            return "Authentication failed"
-        case .rdpUnavailable:
-            return "RDP is unavailable."
-        case .connectionRefused:
-            return "Connection refused"
-        case .timeout:
-            return "Connection timed out"
-        case .handshakeFailed:
-            return "Handshake failed"
-        case .dropped:
-            return "Disconnected"
+    private var failoverPrompt: String {
+        "Nothing is listening on port \(sessionPort). Try \(protocolName(failoverTo)) on port \(failoverToPort)?"
+    }
+
+    private func protocolName(_ desktopProtocol: DesktopProtocol) -> String {
+        switch desktopProtocol {
+        case .rdp:
+            return "RDP"
+        case .vnc, .screenSharing:
+            return "VNC"
+        }
+    }
+
+    @MainActor
+    private func applyRemoteClipboard(_ text: String) {
+        guard desktopProtocol == .rdp else { return }
+        if let incoming = clipboardLoop.remoteArrived(text) {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(incoming, forType: .string)
+        }
+    }
+
+    private func pollLocalPasteboard() async {
+        var changeCount = await MainActor.run { NSPasteboard.general.changeCount }
+        while !Task.isCancelled {
+            try? await Task.sleep(for: .milliseconds(300))
+            let outgoing = await MainActor.run { () -> String? in
+                guard desktopProtocol == .rdp else { return nil }
+                let pasteboard = NSPasteboard.general
+                guard pasteboard.changeCount != changeCount else { return nil }
+                changeCount = pasteboard.changeCount
+                return clipboardLoop.localPasteboardChanged(pasteboard.string(forType: .string))
+            }
+            if let outgoing {
+                await controller.sendClipboard(outgoing)
+            }
         }
     }
 
     @MainActor
     private func handle(_ event: SessionEvent) {
         sessionEvent = event
-        if case .offerFailover(_, let to, _) = event {
+        switch event {
+        case .offerFailover(_, let to, let port):
             failoverTo = to
+            failoverToPort = port
             showFailover = true
+        case .failed(.authenticationFailed):
+            showCredentials = true
+        case .failed(.rdpUnavailable):
+            showRDPUnavailable = true
+        case .connected:
+            if pendingOverride {
+                pendingOverride = false
+                appState.rememberFailover(
+                    peerID: peerID,
+                    override: ProtocolOverride(desktopProtocol: desktopProtocol, port: sessionPort)
+                )
+            }
+        case .disconnected:
+            dismiss()
+        default:
+            break
         }
     }
 }

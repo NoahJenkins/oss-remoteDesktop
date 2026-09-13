@@ -7,7 +7,10 @@ import TailviewVNC
 
 struct OpenSession {
     var id: UUID
+    var peerID: String
     var displayName: String
+    var desktopProtocol: DesktopProtocol
+    var port: UInt16
     var controller: SessionController
 }
 
@@ -23,6 +26,7 @@ final class AppState {
     private let profileStore: ProfileStore
     private var pollTask: Task<Void, Never>?
     private var didStart = false
+    private var lastStatus: TailscaleStatus?
 
     init(
         client: TailscaleClient = TailscaleClient(transport: UnixLocalAPITransport()),
@@ -47,6 +51,7 @@ final class AppState {
         didStart = true
         pollTask = Task {
             for await status in client.snapshots() {
+                lastStatus = status
                 listModel = ListModel.from(status: status, profiles: profileStore.allProfiles)
             }
         }
@@ -78,12 +83,26 @@ final class AppState {
         sessions.removeValue(forKey: id)
     }
 
+    func rememberFailover(peerID: String, override: ProtocolOverride) {
+        try? profileStore.setOverride(peerID: peerID, override: override)
+        if let lastStatus {
+            listModel = ListModel.from(status: lastStatus, profiles: profileStore.allProfiles)
+        }
+    }
+
+    func saveSessionCredentials(peerID: String, desktopProtocol: DesktopProtocol, credentials: SessionCredentials) {
+        try? credentialStore.save(peerID: peerID, desktopProtocol: desktopProtocol, credentials: credentials)
+    }
+
     private func presentSession(row: PeerRow, credentials: SessionCredentials) -> UUID? {
         guard let host = row.host, let port = row.port, let desktopProtocol = row.desktopProtocol else { return nil }
         let id = UUID()
         sessions[id] = OpenSession(
             id: id,
+            peerID: row.id,
             displayName: row.displayName,
+            desktopProtocol: desktopProtocol,
+            port: port,
             controller: SessionController(
                 endpoint: Endpoint(host: host, port: port),
                 desktopProtocol: desktopProtocol,

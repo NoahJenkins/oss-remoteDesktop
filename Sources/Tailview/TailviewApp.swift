@@ -13,7 +13,14 @@ struct TailviewApp: App {
         WindowGroup(id: "session", for: UUID.self) { $sessionID in
             Group {
                 if let sessionID, let session = appState.session(for: sessionID) {
-                    SessionView(sessionID: sessionID, controller: session.controller, displayName: session.displayName)
+                    SessionView(
+                        sessionID: sessionID,
+                        controller: session.controller,
+                        peerID: session.peerID,
+                        displayName: session.displayName,
+                        desktopProtocol: session.desktopProtocol,
+                        port: session.port
+                    )
                 }
             }
             .frame(minWidth: 480, minHeight: 320)
