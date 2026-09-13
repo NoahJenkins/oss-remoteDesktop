@@ -49,5 +49,6 @@ let package = Package(
             dependencies: ["TailviewCore"],
             resources: [.copy("Fixtures")]
         ),
+        .testTarget(name: "TailviewRDPTests", dependencies: ["TailviewRDP"]),
     ]
 )

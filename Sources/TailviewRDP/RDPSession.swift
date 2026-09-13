@@ -47,12 +47,8 @@ public final class RDPSession: RemoteSession, @unchecked Sendable {
             }.value
             state.install(session)
             startPolling(session)
-        } catch let error as RdpError {
-            throw Self.mapError(error)
-        } catch is CancellationError {
-            throw SessionFailure.dropped
         } catch {
-            throw SessionFailure.rdpUnavailable
+            throw Self.mapConnectError(error)
         }
     }
 
@@ -95,10 +91,25 @@ public final class RDPSession: RemoteSession, @unchecked Sendable {
                 if let text = session.pollClipboard() {
                     clipboardContinuation.yield(text)
                 }
+                if session.isDropped() {
+                    frameContinuation.finish()
+                    clipboardContinuation.finish()
+                    return
+                }
                 try? await Task.sleep(for: .milliseconds(16))
             }
         }
         state.setPolling(task)
+    }
+
+    static func mapConnectError(_ error: Error) -> SessionFailure {
+        if let error = error as? RdpError {
+            return mapError(error)
+        }
+        if error is CancellationError {
+            return .dropped
+        }
+        return .handshakeFailed
     }
 
     private static func mapError(_ error: RdpError) -> SessionFailure {

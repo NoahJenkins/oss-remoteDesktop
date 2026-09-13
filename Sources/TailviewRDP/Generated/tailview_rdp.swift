@@ -519,6 +519,8 @@ public protocol RdpSessionProtocol: AnyObject, Sendable {
     
     func disconnect() 
     
+    func isDropped()  -> Bool
+    
     func pollClipboard()  -> String?
     
     func pollFrame()  -> RdpFrame?
@@ -586,6 +588,13 @@ open func disconnect()  {try! rustCall() {
     uniffi_tailview_rdp_fn_method_rdpsession_disconnect(self.uniffiClonePointer(),$0
     )
 }
+}
+    
+open func isDropped() -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+    uniffi_tailview_rdp_fn_method_rdpsession_is_dropped(self.uniffiClonePointer(),$0
+    )
+})
 }
     
 open func pollClipboard() -> String?  {
@@ -946,6 +955,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tailview_rdp_checksum_method_rdpsession_disconnect() != 26987) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tailview_rdp_checksum_method_rdpsession_is_dropped() != 5779) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tailview_rdp_checksum_method_rdpsession_poll_clipboard() != 50833) {

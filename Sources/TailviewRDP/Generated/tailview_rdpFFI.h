@@ -266,6 +266,11 @@ void uniffi_tailview_rdp_fn_free_rdpsession(void*_Nonnull ptr, RustCallStatus *_
 void uniffi_tailview_rdp_fn_method_rdpsession_disconnect(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_TAILVIEW_RDP_FN_METHOD_RDPSESSION_IS_DROPPED
+#define UNIFFI_FFIDEF_UNIFFI_TAILVIEW_RDP_FN_METHOD_RDPSESSION_IS_DROPPED
+int8_t uniffi_tailview_rdp_fn_method_rdpsession_is_dropped(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_TAILVIEW_RDP_FN_METHOD_RDPSESSION_POLL_CLIPBOARD
 #define UNIFFI_FFIDEF_UNIFFI_TAILVIEW_RDP_FN_METHOD_RDPSESSION_POLL_CLIPBOARD
 RustBuffer uniffi_tailview_rdp_fn_method_rdpsession_poll_clipboard(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
@@ -585,6 +590,12 @@ uint16_t uniffi_tailview_rdp_checksum_func_rdp_connect(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_TAILVIEW_RDP_CHECKSUM_METHOD_RDPSESSION_DISCONNECT
 #define UNIFFI_FFIDEF_UNIFFI_TAILVIEW_RDP_CHECKSUM_METHOD_RDPSESSION_DISCONNECT
 uint16_t uniffi_tailview_rdp_checksum_method_rdpsession_disconnect(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_TAILVIEW_RDP_CHECKSUM_METHOD_RDPSESSION_IS_DROPPED
+#define UNIFFI_FFIDEF_UNIFFI_TAILVIEW_RDP_CHECKSUM_METHOD_RDPSESSION_IS_DROPPED
+uint16_t uniffi_tailview_rdp_checksum_method_rdpsession_is_dropped(void
     
 );
 #endif

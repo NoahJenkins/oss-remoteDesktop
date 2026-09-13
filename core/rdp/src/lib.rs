@@ -2,6 +2,7 @@ uniffi::setup_scaffolding!();
 
 use std::io::Write;
 use std::net::{TcpStream, ToSocketAddrs};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex, Once};
 use std::thread;
@@ -86,6 +87,13 @@ struct Shared {
     frame: Mutex<Option<RdpFrame>>,
     clipboard: Mutex<Option<String>>,
     outgoing: Mutex<Option<String>>,
+    dropped: AtomicBool,
+}
+
+fn mark_worker_exit(shared: &Shared, disconnect_requested: bool) {
+    if !disconnect_requested {
+        shared.dropped.store(true, Ordering::SeqCst);
+    }
 }
 
 #[derive(uniffi::Object)]
@@ -107,6 +115,7 @@ pub fn rdp_connect(
         frame: Mutex::new(None),
         clipboard: Mutex::new(None),
         outgoing: Mutex::new(None),
+        dropped: AtomicBool::new(false),
     });
     let backend = SessionClipBackend {
         commands: Some(tx.clone()),
@@ -160,6 +169,10 @@ impl RdpSession {
     pub fn poll_clipboard(&self) -> Option<String> {
         self.shared.clipboard.lock().ok()?.take()
     }
+
+    pub fn is_dropped(&self) -> bool {
+        self.shared.dropped.load(Ordering::SeqCst)
+    }
 }
 
 impl RdpSession {
@@ -168,6 +181,25 @@ impl RdpSession {
             let _ = tx.send(command);
         }
     }
+
+    #[cfg(test)]
+    fn for_test() -> Self {
+        Self {
+            commands: Mutex::new(None),
+            shared: Arc::new(Shared {
+                frame: Mutex::new(None),
+                clipboard: Mutex::new(None),
+                outgoing: Mutex::new(None),
+                dropped: AtomicBool::new(false),
+            }),
+        }
+    }
+}
+
+enum LoopControl {
+    Continue,
+    Disconnect,
+    Drop,
 }
 
 type UpgradedFramed = Framed<rustls::StreamOwned<rustls::ClientConnection, TcpStream>>;
@@ -265,9 +297,10 @@ fn run_active_stage(
     );
     let mut active_stage = ActiveStage::new(connection_result);
     let mut input = Database::new();
+    let mut disconnect_requested = false;
     loop {
         while let Ok(command) = commands.try_recv() {
-            if !handle_command(
+            match handle_command(
                 command,
                 &mut active_stage,
                 &mut framed,
@@ -275,24 +308,43 @@ fn run_active_stage(
                 &mut input,
                 &shared,
             ) {
-                return;
+                LoopControl::Continue => {}
+                LoopControl::Disconnect => {
+                    disconnect_requested = true;
+                    break;
+                }
+                LoopControl::Drop => {
+                    mark_worker_exit(&shared, false);
+                    return;
+                }
             }
+        }
+        if disconnect_requested {
+            break;
         }
         let (action, payload) = match framed.read_pdu() {
             Ok(frame) => frame,
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock || e.kind() == std::io::ErrorKind::TimedOut => {
                 continue;
             }
-            Err(_) => return,
+            Err(_) => {
+                mark_worker_exit(&shared, false);
+                return;
+            }
         };
         let outputs = match active_stage.process(&mut image, action, &payload) {
             Ok(outputs) => outputs,
-            Err(_) => return,
+            Err(_) => {
+                mark_worker_exit(&shared, false);
+                return;
+            }
         };
         if !apply_outputs(&mut framed, &mut image, &shared, outputs) {
+            mark_worker_exit(&shared, false);
             return;
         }
     }
+    mark_worker_exit(&shared, disconnect_requested);
 }
 
 fn handle_command(
@@ -302,13 +354,13 @@ fn handle_command(
     image: &mut DecodedImage,
     input: &mut Database,
     shared: &Shared,
-) -> bool {
+) -> LoopControl {
     match command {
         Command::Disconnect => {
             if let Ok(outputs) = active_stage.graceful_shutdown() {
                 let _ = apply_outputs(framed, image, shared, outputs);
             }
-            false
+            LoopControl::Disconnect
         }
         Command::Pointer {
             x,
@@ -321,7 +373,11 @@ fn handle_command(
             push_button(&mut ops, input, MouseButton::Left, left);
             push_button(&mut ops, input, MouseButton::Right, right);
             push_button(&mut ops, input, MouseButton::Middle, middle);
-            send_input(active_stage, framed, image, shared, input.apply(ops))
+            if send_input(active_stage, framed, image, shared, input.apply(ops)) {
+                LoopControl::Continue
+            } else {
+                LoopControl::Drop
+            }
         }
         Command::Scancode { scancode, down } => {
             let code = Scancode::from_u16(scancode);
@@ -330,15 +386,37 @@ fn handle_command(
             } else {
                 Operation::KeyReleased(code)
             };
-            send_input(active_stage, framed, image, shared, input.apply([op]))
+            if send_input(active_stage, framed, image, shared, input.apply([op])) {
+                LoopControl::Continue
+            } else {
+                LoopControl::Drop
+            }
         }
-        Command::InitiateCopy => send_cliprdr(active_stage, framed, |clip| {
-            clip.initiate_copy(&[ClipboardFormat::new(ClipboardFormatId::CF_UNICODETEXT)])
-        }),
-        Command::InitiatePaste => send_cliprdr(active_stage, framed, |clip| {
-            clip.initiate_paste(ClipboardFormatId::CF_UNICODETEXT)
-        }),
-        Command::SubmitFormatData(response) => send_cliprdr(active_stage, framed, |clip| clip.submit_format_data(response)),
+        Command::InitiateCopy => {
+            if send_cliprdr(active_stage, framed, |clip| {
+                clip.initiate_copy(&[ClipboardFormat::new(ClipboardFormatId::CF_UNICODETEXT)])
+            }) {
+                LoopControl::Continue
+            } else {
+                LoopControl::Drop
+            }
+        }
+        Command::InitiatePaste => {
+            if send_cliprdr(active_stage, framed, |clip| {
+                clip.initiate_paste(ClipboardFormatId::CF_UNICODETEXT)
+            }) {
+                LoopControl::Continue
+            } else {
+                LoopControl::Drop
+            }
+        }
+        Command::SubmitFormatData(response) => {
+            if send_cliprdr(active_stage, framed, |clip| clip.submit_format_data(response)) {
+                LoopControl::Continue
+            } else {
+                LoopControl::Drop
+            }
+        }
     }
 }
 
@@ -611,5 +689,20 @@ mod tests {
     fn io_kind_maps_to_rdp_error() {
         assert!(matches!(map_io(std::io::ErrorKind::ConnectionRefused), RdpError::ConnectionRefused));
         assert!(matches!(map_io(std::io::ErrorKind::TimedOut), RdpError::Timeout));
+    }
+
+    #[test]
+    fn unexpected_worker_exit_marks_session_dropped() {
+        let session = RdpSession::for_test();
+        assert!(!session.is_dropped());
+        mark_worker_exit(&session.shared, false);
+        assert!(session.is_dropped());
+    }
+
+    #[test]
+    fn disconnect_worker_exit_does_not_mark_dropped() {
+        let session = RdpSession::for_test();
+        mark_worker_exit(&session.shared, true);
+        assert!(!session.is_dropped());
     }
 }
