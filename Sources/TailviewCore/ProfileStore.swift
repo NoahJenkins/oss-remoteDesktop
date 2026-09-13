@@ -19,6 +19,10 @@ public final class ProfileStore {
         }
     }
 
+    public var allProfiles: [String: PeerProfile] {
+        profiles
+    }
+
     public func profile(for peerID: String) -> PeerProfile? {
         profiles[peerID]
     }
