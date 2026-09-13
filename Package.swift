@@ -11,6 +11,10 @@ let package = Package(
     targets: [
         .target(name: "TailviewCore"),
         .executableTarget(name: "Tailview", dependencies: ["TailviewCore"]),
-        .testTarget(name: "TailviewCoreTests", dependencies: ["TailviewCore"]),
+        .testTarget(
+            name: "TailviewCoreTests",
+            dependencies: ["TailviewCore"],
+            resources: [.copy("Fixtures")]
+        ),
     ]
 )

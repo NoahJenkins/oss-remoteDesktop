@@ -1,0 +1,30 @@
+{
+  "Version": "1.70.0",
+  "BackendState": "Running",
+  "Self": {
+    "ID": "nSelf123",
+    "HostName": "my-mac",
+    "DNSName": "my-mac.tailnet.ts.net.",
+    "OS": "macOS",
+    "Online": true,
+    "TailscaleIPs": ["100.64.0.1"]
+  },
+  "Peer": {
+    "nodekey:aaaa": {
+      "ID": "nLinux1",
+      "HostName": "devbox",
+      "DNSName": "devbox.tailnet.ts.net.",
+      "OS": "linux",
+      "Online": true,
+      "TailscaleIPs": ["100.64.0.2", "fd7a:115c:a1e0::2"]
+    },
+    "nodekey:bbbb": {
+      "ID": "nPhone",
+      "HostName": "iphone",
+      "DNSName": "iphone.tailnet.ts.net.",
+      "OS": "iOS",
+      "Online": true,
+      "TailscaleIPs": ["100.64.0.9"]
+    }
+  }
+}
