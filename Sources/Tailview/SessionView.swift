@@ -114,7 +114,9 @@ struct SessionView: View {
             }
         }
         .alert("RDP is unavailable.", isPresented: $showRDPUnavailable) {
-            Button("OK", role: .cancel) {}
+            Button("OK", role: .cancel) {
+                Task { await controller.disconnect() }
+            }
         } message: {
             Text("VNC still works from the list.")
         }
@@ -131,6 +133,7 @@ struct SessionView: View {
                 Task { await controller.retryWithCredentials(credentials) }
             } onCancel: {
                 showCredentials = false
+                Task { await controller.disconnect() }
             }
         }
     }
