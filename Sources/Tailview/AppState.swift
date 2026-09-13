@@ -4,14 +4,18 @@ import Observation
 import TailviewCore
 import TailviewVNC
 
+struct OpenSession {
+    var id: UUID
+    var displayName: String
+    var controller: SessionController
+}
+
 @MainActor
 @Observable
 final class AppState {
     var listModel: ListModel = .notRunning
     var credentialPrompt: PeerRow?
-    var sessionRow: PeerRow?
-    private(set) var sessionCredentials: SessionCredentials?
-    private(set) var sessionController: SessionController?
+    private(set) var sessions: [UUID: OpenSession] = [:]
 
     private let client: TailscaleClient
     private let credentialStore: any CredentialStore
@@ -47,35 +51,46 @@ final class AppState {
         }
     }
 
-    func connect(_ row: PeerRow) -> Bool {
-        guard let desktopProtocol = row.desktopProtocol else { return false }
+    func connect(_ row: PeerRow) -> UUID? {
+        guard let desktopProtocol = row.desktopProtocol else { return nil }
         if let credentials = try? credentialStore.load(peerID: row.id, desktopProtocol: desktopProtocol) {
-            presentSession(row: row, credentials: credentials)
-            return true
+            return presentSession(row: row, credentials: credentials)
         }
         credentialPrompt = row
-        return false
+        return nil
     }
 
-    func submitCredentials(_ credentials: SessionCredentials, saveInKeychain: Bool) {
-        guard let row = credentialPrompt, let desktopProtocol = row.desktopProtocol else { return }
+    func submitCredentials(_ credentials: SessionCredentials, saveInKeychain: Bool) -> UUID? {
+        guard let row = credentialPrompt, let desktopProtocol = row.desktopProtocol else { return nil }
         if saveInKeychain {
             try? credentialStore.save(peerID: row.id, desktopProtocol: desktopProtocol, credentials: credentials)
         }
-        presentSession(row: row, credentials: credentials)
         credentialPrompt = nil
+        return presentSession(row: row, credentials: credentials)
     }
 
-    private func presentSession(row: PeerRow, credentials: SessionCredentials) {
-        guard let host = row.host, let port = row.port, let desktopProtocol = row.desktopProtocol else { return }
-        sessionCredentials = credentials
-        sessionRow = row
-        sessionController = SessionController(
-            endpoint: Endpoint(host: host, port: port),
-            desktopProtocol: desktopProtocol,
-            credentials: credentials,
-            factory: DefaultSessionFactory()
+    func session(for id: UUID) -> OpenSession? {
+        sessions[id]
+    }
+
+    func endSession(_ id: UUID) {
+        sessions.removeValue(forKey: id)
+    }
+
+    private func presentSession(row: PeerRow, credentials: SessionCredentials) -> UUID? {
+        guard let host = row.host, let port = row.port, let desktopProtocol = row.desktopProtocol else { return nil }
+        let id = UUID()
+        sessions[id] = OpenSession(
+            id: id,
+            displayName: row.displayName,
+            controller: SessionController(
+                endpoint: Endpoint(host: host, port: port),
+                desktopProtocol: desktopProtocol,
+                credentials: credentials,
+                factory: DefaultSessionFactory()
+            )
         )
+        return id
     }
 
     func cancelCredentials() {

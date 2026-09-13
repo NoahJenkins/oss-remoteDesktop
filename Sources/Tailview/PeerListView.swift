@@ -20,8 +20,9 @@ struct PeerListView: View {
         .onAppear { appState.start() }
         .sheet(item: Bindable(appState).credentialPrompt) { row in
             CredentialSheet(row: row) { credentials, saveInKeychain in
-                appState.submitCredentials(credentials, saveInKeychain: saveInKeychain)
-                openWindow(id: "session")
+                if let id = appState.submitCredentials(credentials, saveInKeychain: saveInKeychain) {
+                    openWindow(id: "session", value: id)
+                }
             } onCancel: {
                 appState.cancelCredentials()
             }
@@ -56,8 +57,8 @@ struct PeerListView: View {
             TableColumn("") { row in
                 HStack {
                     Button("Connect") {
-                        if appState.connect(row) {
-                            openWindow(id: "session")
+                        if let id = appState.connect(row) {
+                            openWindow(id: "session", value: id)
                         }
                     }
                     .disabled(!row.connectEnabled)

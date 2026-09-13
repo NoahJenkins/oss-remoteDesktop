@@ -3,8 +3,10 @@ import SwiftUI
 import TailviewCore
 
 struct SessionView: View {
+    let sessionID: UUID
     let controller: SessionController
     let displayName: String
+    @Environment(AppState.self) private var appState
 
     @State private var sessionEvent: SessionEvent = .connecting
     @State private var frame: FramebufferFrame?
@@ -67,7 +69,10 @@ struct SessionView: View {
             }
         }
         .onDisappear {
-            Task { await controller.disconnect() }
+            Task {
+                await controller.disconnect()
+                await MainActor.run { appState.endSession(sessionID) }
+            }
         }
         .confirmationDialog(failoverPrompt, isPresented: $showFailover) {
             Button(failoverPrompt) {
@@ -146,6 +151,7 @@ final class FramebufferNSView: NSView {
     private var right = false
     private var middle = false
     private var trackingArea: NSTrackingArea?
+    private var keyMonitor: Any?
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
@@ -175,8 +181,13 @@ final class FramebufferNSView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        window?.makeFirstResponder(self)
-        window?.acceptsMouseMovedEvents = true
+        if window != nil {
+            installKeyMonitor()
+            window?.makeFirstResponder(self)
+            window?.acceptsMouseMovedEvents = true
+        } else {
+            removeKeyMonitor()
+        }
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -240,11 +251,20 @@ final class FramebufferNSView: NSView {
     }
 
     override func keyDown(with event: NSEvent) {
-        onKey?(KeyEvent(down: true, macKeyCode: event.keyCode, characters: event.charactersIgnoringModifiers ?? ""))
+        emitKey(event, down: true)
     }
 
     override func keyUp(with event: NSEvent) {
-        onKey?(KeyEvent(down: false, macKeyCode: event.keyCode, characters: event.charactersIgnoringModifiers ?? ""))
+        emitKey(event, down: false)
+    }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        guard window?.isKeyWindow == true, window?.firstResponder === self else {
+            return super.performKeyEquivalent(with: event)
+        }
+        emitKey(event, down: true)
+        emitKey(event, down: false)
+        return true
     }
 
     override func flagsChanged(with event: NSEvent) {
@@ -263,6 +283,27 @@ final class FramebufferNSView: NSView {
             return
         }
         onKey?(KeyEvent(down: down, macKeyCode: event.keyCode, characters: ""))
+    }
+
+    private func emitKey(_ event: NSEvent, down: Bool) {
+        onKey?(KeyEvent(down: down, macKeyCode: event.keyCode, characters: event.charactersIgnoringModifiers ?? ""))
+    }
+
+    private func installKeyMonitor() {
+        removeKeyMonitor()
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self] event in
+            guard let self else { return event }
+            guard self.window?.isKeyWindow == true, self.window?.firstResponder === self else { return event }
+            self.emitKey(event, down: event.type == .keyDown)
+            return nil
+        }
+    }
+
+    private func removeKeyMonitor() {
+        if let keyMonitor {
+            NSEvent.removeMonitor(keyMonitor)
+        }
+        keyMonitor = nil
     }
 
     private func emitPointer(_ event: NSEvent) {
