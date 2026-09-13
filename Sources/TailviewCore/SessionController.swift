@@ -46,8 +46,7 @@ public final class SessionController: Sendable {
     public func start() async {
         await tearDownSession(emitDisconnected: false)
         yield(.connecting)
-        let desktopProtocol = state.desktopProtocol
-        let port = state.port
+        let (desktopProtocol, port) = state.protocolAndPort()
         let session: any RemoteSession
         do {
             session = try factory.makeSession(
@@ -65,9 +64,11 @@ public final class SessionController: Sendable {
         do {
             try await session.connect()
         } catch let failure as SessionFailure {
+            await tearDownSession(emitDisconnected: false)
             handleFailure(failure, from: desktopProtocol)
             return
         } catch {
+            await tearDownSession(emitDisconnected: false)
             return
         }
         yield(.connected)
@@ -75,14 +76,12 @@ public final class SessionController: Sendable {
     }
 
     public func acceptFailover() async {
-        let (nextProtocol, nextPort) = ProtocolHeuristic.failover(from: state.desktopProtocol)
-        state.desktopProtocol = nextProtocol
-        state.port = nextPort
+        state.applyFailover()
         await start()
     }
 
     public func declineFailover() async {
-        yield(.disconnected)
+        await tearDownSession(emitDisconnected: true)
     }
 
     public func reconnect() async {
@@ -95,15 +94,15 @@ public final class SessionController: Sendable {
     }
 
     public func sendPointer(_ event: PointerEvent) async {
-        await state.session?.sendPointer(event)
+        await state.currentSession()?.sendPointer(event)
     }
 
     public func sendKey(_ event: KeyEvent) async {
-        await state.session?.sendKey(event)
+        await state.currentSession()?.sendKey(event)
     }
 
     public func sendClipboard(_ text: String) async {
-        await state.session?.sendClipboard(text)
+        await state.currentSession()?.sendClipboard(text)
     }
 
     private func handleFailure(_ failure: SessionFailure, from desktopProtocol: DesktopProtocol) {
@@ -123,25 +122,23 @@ public final class SessionController: Sendable {
     private func forward(_ session: any RemoteSession, sessionID: Int) {
         let framesTask = Task { [state] in
             for await frame in session.frames {
-                state.frameContinuation.yield(frame)
+                state.yieldFrame(frame)
             }
-            if state.isCurrent(sessionID) && state.connected {
-                state.connected = false
-                state.eventContinuation.yield(.dropped)
+            if state.clearConnectedIfCurrent(sessionID) {
+                state.yieldEvent(.dropped)
             }
         }
         let clipboardTask = Task { [state] in
             for await text in session.remoteClipboard {
-                state.clipboardContinuation.yield(text)
+                state.yieldClipboard(text)
             }
         }
         state.addForwarding([framesTask, clipboardTask])
-        state.connected = true
+        state.markConnected()
     }
 
     private func tearDownSession(emitDisconnected: Bool) async {
         state.cancelForwarding()
-        state.connected = false
         let session = state.takeSession()
         await session?.disconnect()
         if emitDisconnected {
@@ -150,20 +147,20 @@ public final class SessionController: Sendable {
     }
 
     private func yield(_ event: SessionEvent) {
-        state.eventContinuation.yield(event)
+        state.yieldEvent(event)
     }
 
     private final class State: @unchecked Sendable {
-        let lock = NSLock()
-        var desktopProtocol: DesktopProtocol
-        var port: UInt16
-        var session: (any RemoteSession)?
-        var connected = false
-        var sessionID = 0
-        var forwardingTasks: [Task<Void, Never>] = []
-        let eventContinuation: AsyncStream<SessionEvent>.Continuation
-        let frameContinuation: AsyncStream<FramebufferFrame>.Continuation
-        let clipboardContinuation: AsyncStream<String>.Continuation
+        private let lock = NSLock()
+        private var desktopProtocol: DesktopProtocol
+        private var port: UInt16
+        private var session: (any RemoteSession)?
+        private var connected = false
+        private var sessionID = 0
+        private var forwardingTasks: [Task<Void, Never>] = []
+        private let eventContinuation: AsyncStream<SessionEvent>.Continuation
+        private let frameContinuation: AsyncStream<FramebufferFrame>.Continuation
+        private let clipboardContinuation: AsyncStream<String>.Continuation
 
         init(
             desktopProtocol: DesktopProtocol,
@@ -179,10 +176,31 @@ public final class SessionController: Sendable {
             self.clipboardContinuation = clipboardContinuation
         }
 
+        func protocolAndPort() -> (DesktopProtocol, UInt16) {
+            lock.lock()
+            defer { lock.unlock() }
+            return (desktopProtocol, port)
+        }
+
+        func applyFailover() {
+            lock.lock()
+            defer { lock.unlock() }
+            let (nextProtocol, nextPort) = ProtocolHeuristic.failover(from: desktopProtocol)
+            desktopProtocol = nextProtocol
+            port = nextPort
+        }
+
+        func currentSession() -> (any RemoteSession)? {
+            lock.lock()
+            defer { lock.unlock() }
+            return session
+        }
+
         func install(_ session: any RemoteSession) -> Int {
             lock.lock()
             defer { lock.unlock() }
             self.session = session
+            connected = false
             sessionID += 1
             return sessionID
         }
@@ -190,15 +208,24 @@ public final class SessionController: Sendable {
         func takeSession() -> (any RemoteSession)? {
             lock.lock()
             defer { lock.unlock() }
+            connected = false
             let current = session
             session = nil
             return current
         }
 
-        func isCurrent(_ id: Int) -> Bool {
+        func markConnected() {
             lock.lock()
             defer { lock.unlock() }
-            return sessionID == id && session != nil
+            connected = true
+        }
+
+        func clearConnectedIfCurrent(_ id: Int) -> Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            guard sessionID == id, session != nil, connected else { return false }
+            connected = false
+            return true
         }
 
         func addForwarding(_ tasks: [Task<Void, Never>]) {
@@ -213,6 +240,18 @@ public final class SessionController: Sendable {
             forwardingTasks = []
             lock.unlock()
             tasks.forEach { $0.cancel() }
+        }
+
+        func yieldEvent(_ event: SessionEvent) {
+            eventContinuation.yield(event)
+        }
+
+        func yieldFrame(_ frame: FramebufferFrame) {
+            frameContinuation.yield(frame)
+        }
+
+        func yieldClipboard(_ text: String) {
+            clipboardContinuation.yield(text)
         }
     }
 }

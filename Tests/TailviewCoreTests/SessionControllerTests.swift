@@ -78,6 +78,35 @@ struct SessionControllerTests {
         await controller.disconnect()
         #expect(factory.lastSession?.disconnectCalled == true)
     }
+
+    @Test func failedConnectReleasesBackendAndDropsInput() async {
+        let factory = FakeSessionFactory(result: .failure(.connectionRefused))
+        let controller = SessionController(
+            endpoint: endpoint,
+            desktopProtocol: .vnc,
+            credentials: credentials,
+            factory: factory
+        )
+        await controller.start()
+        await controller.sendClipboard("secret")
+        #expect(factory.lastSession?.disconnectCalled == true)
+        #expect(factory.lastSession?.sentClipboard.isEmpty == true)
+    }
+
+    @Test func declineFailoverReleasesFailedSession() async {
+        let factory = FakeSessionFactory(result: .failure(.timeout))
+        let controller = SessionController(
+            endpoint: endpoint,
+            desktopProtocol: .vnc,
+            credentials: credentials,
+            factory: factory
+        )
+        await controller.start()
+        await controller.declineFailover()
+        #expect(factory.lastSession?.disconnectCalled == true)
+        let events = await collect(controller.events, atLeast: 3)
+        #expect(events.contains(.disconnected))
+    }
 }
 
 func collect<T: Sendable>(_ stream: AsyncStream<T>, atLeast _: Int) async -> [T] {
