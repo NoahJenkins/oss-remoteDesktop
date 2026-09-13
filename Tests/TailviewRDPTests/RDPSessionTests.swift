@@ -21,4 +21,8 @@ struct RDPSessionTests {
         #expect(RDPSession.mapConnectError(RdpError.AuthenticationFailed(message: "x")) == .authenticationFailed)
         #expect(RDPSession.mapConnectError(RdpError.Dropped(message: "x")) == .dropped)
     }
+
+    @Test func spaceMapsToScancode() {
+        #expect(RDPSession.scancode(for: 49) == 0x39)
+    }
 }

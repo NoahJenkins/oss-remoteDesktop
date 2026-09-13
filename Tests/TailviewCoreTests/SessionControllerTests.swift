@@ -108,6 +108,51 @@ struct SessionControllerTests {
         #expect(events.contains(.disconnected))
     }
 
+    @Test func connectTimeDroppedOffersFailover() async {
+        let factory = FakeSessionFactory(result: .failure(.dropped))
+        let controller = SessionController(
+            endpoint: endpoint,
+            desktopProtocol: .vnc,
+            credentials: credentials,
+            factory: factory
+        )
+        await controller.start()
+        let events = await collect(controller.events, atLeast: 2)
+        #expect(events.contains(.connecting))
+        #expect(events.contains(.offerFailover(from: .vnc, to: .rdp, port: 3389)))
+        #expect(!events.contains(.dropped))
+    }
+
+    @Test func dropAfterConnectYieldsDropped() async {
+        let factory = FakeSessionFactory(result: .success(()), dropAfterConnect: true)
+        let controller = SessionController(
+            endpoint: endpoint,
+            desktopProtocol: .vnc,
+            credentials: credentials,
+            factory: factory
+        )
+        await controller.start()
+        let events = await collect(controller.events, atLeast: 3)
+        #expect(events.contains(.connecting))
+        #expect(events.contains(.connected))
+        #expect(events.contains(.dropped))
+        #expect(!events.contains { if case .offerFailover = $0 { return true }; return false })
+    }
+
+    @Test func unknownStartErrorFailsHandshake() async {
+        let controller = SessionController(
+            endpoint: endpoint,
+            desktopProtocol: .vnc,
+            credentials: credentials,
+            factory: ThrowingSessionFactory()
+        )
+        await controller.start()
+        let events = await collect(controller.events, atLeast: 2)
+        #expect(events.contains(.connecting))
+        #expect(events.contains(.failed(.handshakeFailed)))
+        #expect(!events.contains { if case .offerFailover = $0 { return true }; return false })
+    }
+
     @Test func declineFailoverDisconnectsWithoutSecondSession() async {
         let factory = FakeSessionFactory(result: .failure(.connectionRefused))
         let controller = SessionController(
@@ -121,6 +166,18 @@ struct SessionControllerTests {
         #expect(factory.createdProtocols == [.vnc])
         let events = await collect(controller.events, atLeast: 3)
         #expect(events.contains(.disconnected))
+    }
+}
+
+private struct ThrowingSessionFactory: RemoteSessionFactory {
+    struct Boom: Error {}
+
+    func makeSession(
+        endpoint: Endpoint,
+        desktopProtocol: DesktopProtocol,
+        credentials: SessionCredentials
+    ) throws -> any RemoteSession {
+        throw Boom()
     }
 }
 

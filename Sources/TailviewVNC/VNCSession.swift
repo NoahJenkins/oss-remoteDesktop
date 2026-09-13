@@ -108,7 +108,7 @@ public final class VNCSession: NSObject, RemoteSession, VNCConnectionDelegate, @
                 if snapshot.disconnectRequested {
                     continuation.resume()
                 } else if let error = connectionState.error {
-                    continuation.resume(throwing: Self.mapError(error, didConnect: false))
+                    continuation.resume(throwing: Self.mapError(error, didConnect: snapshot.didConnect))
                 } else {
                     continuation.resume(throwing: SessionFailure.handshakeFailed)
                 }
@@ -212,9 +212,9 @@ public final class VNCSession: NSObject, RemoteSession, VNCConnectionDelegate, @
         case .connection(let connectionError):
             switch connectionError {
             case .closed:
-                return .dropped
+                return didConnect ? .dropped : .handshakeFailed
             case .cancelled:
-                return .dropped
+                return didConnect ? .dropped : .handshakeFailed
             case .closedDuringHandshake:
                 return .handshakeFailed
             case .notReady:

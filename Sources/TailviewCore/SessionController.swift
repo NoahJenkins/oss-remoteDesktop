@@ -58,6 +58,7 @@ public final class SessionController: Sendable {
             handleFailure(failure, from: desktopProtocol)
             return
         } catch {
+            yield(.failed(.handshakeFailed))
             return
         }
         let sessionID = state.install(session)
@@ -69,6 +70,7 @@ public final class SessionController: Sendable {
             return
         } catch {
             await tearDownSession(emitDisconnected: false)
+            yield(.failed(.handshakeFailed))
             return
         }
         yield(.connected)
@@ -116,15 +118,14 @@ public final class SessionController: Sendable {
             yield(.failed(.authenticationFailed))
         case .rdpUnavailable:
             yield(.failed(.rdpUnavailable))
-        case .connectionRefused, .timeout, .handshakeFailed:
+        case .connectionRefused, .timeout, .handshakeFailed, .dropped:
             let (to, port) = ProtocolHeuristic.failover(from: desktopProtocol)
             yield(.offerFailover(from: desktopProtocol, to: to, port: port))
-        case .dropped:
-            yield(.dropped)
         }
     }
 
     private func forward(_ session: any RemoteSession, sessionID: Int) {
+        state.markConnected()
         let framesTask = Task { [state] in
             for await frame in session.frames {
                 state.yieldFrame(frame)
@@ -139,7 +140,6 @@ public final class SessionController: Sendable {
             }
         }
         state.addForwarding([framesTask, clipboardTask])
-        state.markConnected()
     }
 
     private func tearDownSession(emitDisconnected: Bool) async {

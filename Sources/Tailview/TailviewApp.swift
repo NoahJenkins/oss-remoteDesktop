@@ -11,20 +11,36 @@ struct TailviewApp: App {
                 .environment(appState)
         }
         WindowGroup(id: "session", for: UUID.self) { $sessionID in
-            Group {
-                if let sessionID, let session = appState.session(for: sessionID) {
-                    SessionView(
-                        sessionID: sessionID,
-                        controller: session.controller,
-                        peerID: session.peerID,
-                        displayName: session.displayName,
-                        desktopProtocol: session.desktopProtocol,
-                        port: session.port
-                    )
-                }
+            SessionWindowHost(sessionID: sessionID)
+                .frame(minWidth: 480, minHeight: 320)
+                .environment(appState)
+        }
+    }
+}
+
+private struct SessionWindowHost: View {
+    let sessionID: UUID?
+    @Environment(AppState.self) private var appState
+    @Environment(\.dismissWindow) private var dismissWindow
+
+    var body: some View {
+        Group {
+            if let sessionID, let session = appState.session(for: sessionID) {
+                SessionView(
+                    sessionID: sessionID,
+                    controller: session.controller,
+                    peerID: session.peerID,
+                    displayName: session.displayName,
+                    desktopProtocol: session.desktopProtocol,
+                    port: session.port
+                )
             }
-            .frame(minWidth: 480, minHeight: 320)
-            .environment(appState)
+        }
+        .task(id: sessionID) {
+            guard let sessionID else { return }
+            if appState.session(for: sessionID) == nil {
+                dismissWindow(id: "session", value: sessionID)
+            }
         }
     }
 }

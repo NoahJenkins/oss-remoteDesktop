@@ -60,17 +60,20 @@ final class FakeRemoteSession: RemoteSession, @unchecked Sendable {
 
 final class FakeSessionFactory: RemoteSessionFactory, @unchecked Sendable {
     private var results: [Result<Void, SessionFailure>]
+    private let dropAfterConnect: Bool
     private(set) var createdProtocols: [DesktopProtocol] = []
     private(set) var createdPorts: [UInt16] = []
     private(set) var createdCredentials: [SessionCredentials] = []
     private(set) var lastSession: FakeRemoteSession?
 
-    init(result: Result<Void, SessionFailure>) {
+    init(result: Result<Void, SessionFailure>, dropAfterConnect: Bool = false) {
         results = [result]
+        self.dropAfterConnect = dropAfterConnect
     }
 
-    init(results: [Result<Void, SessionFailure>]) {
+    init(results: [Result<Void, SessionFailure>], dropAfterConnect: Bool = false) {
         self.results = results
+        self.dropAfterConnect = dropAfterConnect
     }
 
     func makeSession(
@@ -82,7 +85,7 @@ final class FakeSessionFactory: RemoteSessionFactory, @unchecked Sendable {
         createdPorts.append(endpoint.port)
         createdCredentials.append(credentials)
         let result = results.isEmpty ? Result<Void, SessionFailure>.success(()) : results.removeFirst()
-        let session = FakeRemoteSession(connectResult: result)
+        let session = FakeRemoteSession(connectResult: result, dropAfterConnect: dropAfterConnect)
         lastSession = session
         return session
     }

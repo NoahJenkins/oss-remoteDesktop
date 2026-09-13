@@ -127,7 +127,7 @@ public final class RDPSession: RemoteSession, @unchecked Sendable {
         }
     }
 
-    private static func scancode(for macKeyCode: UInt16) -> UInt16? {
+    static func scancode(for macKeyCode: UInt16) -> UInt16? {
         switch macKeyCode {
         case 0: return 0x1E
         case 1: return 0x1F
@@ -167,6 +167,7 @@ public final class RDPSession: RemoteSession, @unchecked Sendable {
         case 45: return 0x31
         case 46: return 0x32
         case 48: return 0x0F
+        case 49: return 0x39
         case 51: return 0x0E
         case 53: return 0x01
         case 56: return 0x2A

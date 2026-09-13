@@ -9,7 +9,7 @@ let package = Package(
         .executable(name: "Tailview", targets: ["Tailview"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/royalapplications/royalvnc.git", branch: "main"),
+        .package(url: "https://github.com/royalapplications/royalvnc.git", revision: "0a76294a7cdc8616b2eea5fba958415e544ed34b"),
     ],
     targets: [
         .target(name: "TailviewCore"),
@@ -25,12 +25,18 @@ let package = Package(
             path: "Sources/TailviewRDP/Generated",
             sources: ["empty.c"],
             publicHeadersPath: ".",
+            // libtailview_rdp.dylib: cargo build --manifest-path core/rdp/Cargo.toml [--release]
             linkerSettings: [
                 .unsafeFlags([
+                    "-L\(Context.packageDirectory)/core/rdp/target/release",
                     "-L\(Context.packageDirectory)/core/rdp/target/debug",
                     "-Xlinker", "-weak-ltailview_rdp",
                     "-Xlinker", "-rpath",
+                    "-Xlinker", "\(Context.packageDirectory)/core/rdp/target/release",
+                    "-Xlinker", "-rpath",
                     "-Xlinker", "\(Context.packageDirectory)/core/rdp/target/debug",
+                    "-Xlinker", "-rpath",
+                    "-Xlinker", "@executable_path",
                 ])
             ]
         ),
