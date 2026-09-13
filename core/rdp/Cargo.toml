@@ -1,0 +1,25 @@
+[package]
+name = "tailview_rdp"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "staticlib", "lib"]
+name = "tailview_rdp"
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "uniffi-bindgen.rs"
+
+[dependencies]
+ironrdp = { version = "0.16", features = ["connector", "session", "graphics", "cliprdr", "input"] }
+ironrdp-blocking = "0.9"
+ironrdp-cliprdr = "0.6"
+ironrdp-core = "0.2"
+uniffi = { version = "0.29", features = ["cli"] }
+thiserror = "2"
+rustls = { version = "0.23", default-features = false, features = ["std", "tls12", "ring"] }
+x509-cert = "0.2"
+
+[build-dependencies]
+uniffi = { version = "0.29", features = ["build"] }

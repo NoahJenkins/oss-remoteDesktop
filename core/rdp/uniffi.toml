@@ -1,0 +1,5 @@
+[bindings.swift]
+cdylib_name = "tailview_rdp"
+generate_module_map = false
+ffi_module_name = "tailview_rdpFFI"
+module_name = "tailview_rdp"

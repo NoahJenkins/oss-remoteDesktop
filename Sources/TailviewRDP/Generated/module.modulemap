@@ -1,0 +1,4 @@
+module tailview_rdpFFI {
+    header "tailview_rdpFFI.h"
+    export *
+}
